@@ -1,50 +1,17 @@
-from email.errors import InvalidMultipartContentTransferEncodingDefect
-from turtle import color
+from email.mime import base
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
 import os
+from skimage import io
 import time
 import csv
-from ImageVisualization import PreviewDataSet
-
-def CreateModel(imageHeight, imageWidth, numClasses):
-
-    data_aug_layer = tf.keras.Sequential(
-        [
-            tf.keras.layers.RandomFlip(input_shape=(imageHeight, imageWidth, 1)),
-            tf.keras.layers.RandomRotation(0.1),
-            tf.keras.layers.RandomZoom(0.1),
-            tf.keras.layers.RandomContrast(0.1),
-            tf.keras.layers.RandomBrightness(0.1),
-        ]
-    )
-
-    model = tf.keras.Sequential()
-
-    model.add(data_aug_layer)
-    model.add(tf.keras.layers.Rescaling(1./255))
-
-    model.add(tf.keras.layers.Conv2D(16, 3, padding="same", activation="relu"))
-    model.add(tf.keras.layers.MaxPooling2D())
-
-    model.add(tf.keras.layers.Conv2D(32, 3, padding="same", activation="relu"))
-    model.add(tf.keras.layers.MaxPooling2D())
-
-    model.add(tf.keras.layers.Conv2D(64, 3, padding="same", activation="relu"))
-    model.add(tf.keras.layers.MaxPooling2D())
-
-    model.add(tf.keras.layers.Dropout(0.2))
-
-    model.add(tf.keras.layers.Flatten())
-    model.add(tf.keras.layers.Dense(128, activation="relu"))
-    model.add(tf.keras.layers.Dense(numClasses))
-
-    return model
+from ImageHelp.ImageVisualization import PreviewDataSet
+from models.GenericCNN import CreateGenericCNN
 
 def main():
-    imageHeight = 224
-    imageWidth = 224
+    imageHeight = 200 # This is going to distort the image, which will make classifying based on point distance very difficult (impossible)
+    imageWidth = 200
 
     # Save images for prediction
     images = {}
@@ -52,7 +19,7 @@ def main():
         img = tf.keras.utils.load_img(
             f"./DataToPredict/{image}",
             target_size=(imageHeight, imageWidth),
-            color_mode="rgb"
+            color_mode="grayscale"
         )
 
         img = tf.keras.utils.img_to_array(img)
@@ -62,21 +29,20 @@ def main():
 
     # Get image data from directory and store in tf.dataset
     train_ds, val_ds = tf.keras.utils.image_dataset_from_directory(
-        directory="/Users/mitchellmika/Desktop/CrystalDataSortedTrimmed",
+        directory="/Users/mitchellmika/Desktop/CrystalDataSortedZoned",
         validation_split=0.2,
         subset="both",
-        color_mode="rgb",
+        color_mode="grayscale",
         image_size=(imageHeight, imageWidth),
         seed=123,
-        batch_size=10
+        batch_size=64
     )
 
     class_names = train_ds.class_names
     print(class_names)
     numClasses = len(class_names)
 
-    #model = CreateModel(imageHeight, imageWidth, numClasses)
-    model = tf.keras.applications.resnet50.ResNet50(weights="imagenet")
+    model = CreateGenericCNN(imageHeight, imageWidth, numClasses)
 
     model.compile(
         optimizer="adam",
@@ -91,15 +57,15 @@ def main():
     history = model.fit(
         train_ds,
         validation_data=val_ds,
-        epochs=1
+        epochs=10,
+        callbacks=[tf.keras.callbacks.EarlyStopping("val_loss", min_delta=0.001, patience=3)]
     )
     
     for key in images:
         prediction = model.predict(images[key])
-        score = tf.nn.softmax(prediction[0])
 
+        score = tf.nn.softmax(prediction[0])
         print(f"Image {key} is predicted to be {class_names[np.argmax(score)]} with {100*np.max(score):.2f}% confidence.")
-        
 
 if __name__ == "__main__":
     main()
