@@ -6,7 +6,7 @@ import os
 from skimage import io
 import time
 import csv
-from ImageHelp.ImageVisualization import PreviewDataSet
+from DataHelp.ImageVisualization import PreviewDataSet
 from models.GenericCNN import CreateGenericCNN
 
 def main():
