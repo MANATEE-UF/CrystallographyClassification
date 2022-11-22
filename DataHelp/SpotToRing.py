@@ -9,7 +9,7 @@ from Utils import *
 import csv
 
 # Find maxima of TEM image
-def ConvertImageToMaxima(image, showPoints=False):
+def ConvertImageToMaxima(image, showPoints=False, saveScatter=False, imgName="default"):
     image = skimage.filters.median(image) # Median filter to despeckle image before finding points
     image -= np.mean(image) * 2
     image *= 2
@@ -18,7 +18,7 @@ def ConvertImageToMaxima(image, showPoints=False):
     image = skimage.filters.median(image)
     image = skimage.exposure.adjust_gamma(image, 0.6)
 
-    coords = skimage.feature.peak_local_max(image, min_distance=20, threshold_rel=0.5) # TODO: Justify pre-processing steps
+    coords = skimage.feature.peak_local_max(image, min_distance=40, threshold_rel=0.5) # TODO: Justify pre-processing steps
 
     peakMask = np.zeros_like(image, dtype=bool)
     peakMask[tuple(coords.T)] = True
@@ -27,6 +27,12 @@ def ConvertImageToMaxima(image, showPoints=False):
         plt.imshow(image, cmap="gray")
         plt.scatter(coords[:,1], coords[:,0])
         plt.show()
+    elif saveScatter:
+        plt.imshow(image, cmap="gray")
+        plt.scatter(coords[:,1], coords[:,0])
+        plt.savefig(f"{imgName}_scatter.jpg")
+        plt.clf()
+        plt.close()
 
     return peakMask * 1
 
@@ -114,17 +120,20 @@ def CalculateRadii(image, scale=1):
     return radii
 
 # Display ring image from calculated radii
-def ShowRingFromRadii(radii, saveImage=None):
+def ShowRingFromRadii(radii, saveImage=False, imgName="default"):
     fig, ax = plt.subplots()
     for radius in radii:
         circle = ptchs.Circle( (0,0), radius, fill=False)
         ax.add_artist(circle)
-    ax.set_xlim(-1 * max(radii) - 100, max(radii) + 100)
-    ax.set_ylim(-1 * max(radii) - 100, max(radii) + 100)
+    ax.set_xlabel("1/nm")
+    ax.set_xlim(-40, 40) # Should capture the largest possible radii based on experimental image sizes
+    ax.set_ylabel("1/nm")
+    ax.set_ylim(-40, 40)
     ax.set_aspect(1)
+    ax.grid(True, alpha=0.5)
 
-    if saveImage is not None:
-        plt.savefig(saveImage)
+    if saveImage:
+        plt.savefig(f"{imgName}_ring.jpg")
     else:
         plt.show()
     
@@ -132,36 +141,53 @@ def ShowRingFromRadii(radii, saveImage=None):
     plt.close()
 
 # Full workflow from image to radii
-def SpotsToRadii(image, showSteps=False, scale=1):
-    image = ConvertImageToMaxima(image, showSteps)
-    image = CenterImage(image, showSteps)
+def SpotsToRadii(image, showSteps=False, scale=1, saveRing=False, saveScatter=False, imgName="default"):
+    image = ConvertImageToMaxima(
+        image, 
+        showPoints=showSteps, 
+        saveScatter=saveScatter, 
+        imgName=imgName
+    )  
+    image = CenterImage(image, showTranslate=showSteps)
     radii = CalculateRadii(image, scale)
+    
+    if showSteps or saveRing:
+        ShowRingFromRadii(radii, saveImage=saveRing, imgName=imgName)
 
     return radii
 
-def main():
-    inDir = "/Users/mitchellmika/Desktop/In"
-    outDir = "/Users/mitchellmika/Desktop/Out"
+# Pre-process directory of TEM images
+# Saves radii values to csv file and optionally saves a ring image and scatter plot of found maxima for debugging
+def PreProcessDir(inDir, outDir, showSteps=False, saveRing=False, saveScatter=False):
     csvFile = f"{outDir}/radii.csv"
 
-    for image in os.listdir(inDir):
+    for imageName in os.listdir(inDir):
         try:
-            imageName = image
-            savePath = f"{outDir}/{image}"
-            image = f"{inDir}/{image}"
-            image = skimage.util.img_as_float(skimage.io.imread(image, as_gray=True))
-            scaleFactor = (1.0 / 29.8) * 100 # 298 pixels = 10 1/nm for experimental images. Factor of 100 is applied to space out the rings
-            radii = SpotsToRadii(image, showSteps=False, scale=scaleFactor)
+            image = skimage.util.img_as_float(skimage.io.imread(f"{inDir}/{imageName}", as_gray=True))
+            scaleFactor = (1.0 / 29.8) # 298 pixels = 10 1/nm for experimental images
+            
+            radii = SpotsToRadii(image, 
+                showSteps=showSteps, 
+                scale=scaleFactor, 
+                saveRing=saveRing, 
+                saveScatter=saveScatter, 
+                imgName=f"{outDir}/{os.path.splitext(imageName)[0]}"
+            )
+            
             radii.sort()
-
-            ShowRingFromRadii(radii, saveImage=savePath) 
 
             with open(csvFile, "a") as f:
                 radii = [imageName] + radii
                 writer = csv.writer(f)
                 writer.writerow(radii)
+        
         except ValueError:
             print(f"Cannot open {image}")
+
+def main():
+    inDir = "/Users/mitchellmika/Desktop/In"
+    outDir = "/Users/mitchellmika/Desktop/Out"
+    PreProcessDir(inDir, outDir, False, True, True)
 
 if __name__ == "__main__":
     main()
