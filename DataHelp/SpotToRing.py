@@ -1,35 +1,34 @@
 import numpy as np
 import skimage
+from scipy import ndimage as ndi
 import os
 import math
 import matplotlib.pyplot as plt
 import matplotlib.patches as ptchs
 from Utils import *
+import csv
 
-# TODO: Incorporate pixel to 1/nm scale for radii
+# Find maxima of TEM image
+def ConvertImageToMaxima(image, showPoints=False):
+    image = skimage.filters.median(image) # Median filter to despeckle image before finding points
+    image -= np.mean(image) * 2
+    image *= 2
+    image = np.where(image < 0, 0, image)
+    image = np.where(image > 1, 1, image)
+    image = skimage.filters.median(image)
+    image = skimage.exposure.adjust_gamma(image, 0.6)
 
-# Take all zone axes of simulated TEM image and combine into single image
-#   using a logical or
-def CombineSimZoneAxes(dir):
-    imageHeight, imageWidth = GetImageSize(f"{dir}/{os.listdir(dir)[0]}")
-    combinedImage = np.zeros((imageHeight, imageWidth), dtype=int)
-    for image in os.listdir(dir):
-        try:
-            image = skimage.io.imread(f"{dir}/{image}", as_gray=True)
-            np.logical_or(image, combinedImage, out=combinedImage, where=[1])
-        except ValueError:
-            print(f"Skipping {image}")
-    
-    return combinedImage
+    coords = skimage.feature.peak_local_max(image, min_distance=20, threshold_rel=0.5) # TODO: Justify pre-processing steps
 
-# Assumes image is centered
-def ShowRingImageFromSpots(image, rots=5):    
-    for i in range(rots):
-        rotImage = skimage.transform.rotate(image, i)
-        np.logical_or(rotImage, image, out=image, where=[1])
-    
-    plt.imshow(image, cmap="gray")
-    plt.show()
+    peakMask = np.zeros_like(image, dtype=bool)
+    peakMask[tuple(coords.T)] = True
+
+    if showPoints:
+        plt.imshow(image, cmap="gray")
+        plt.scatter(coords[:,1], coords[:,0])
+        plt.show()
+
+    return peakMask * 1
 
 # Centers an image based on position of dots
 def CenterImage(image, showTranslate=False):
@@ -88,7 +87,7 @@ def CenterImage(image, showTranslate=False):
     return image
 
 # Calculate radius from central most point
-def CalculateRadii(image):
+def CalculateRadii(image, scale=1):
     # Catalog all the points in the image
     rows, cols = np.where(image != 0)
     points = list(zip(cols,rows))
@@ -109,13 +108,13 @@ def CalculateRadii(image):
     # Calculate distance from center point to all other points
     radii = []
     for point in points:
-        radii.append(pointDistance(point, centralPoint))
+        radii.append(pointDistance(point, centralPoint) * scale) # Scale is 1/nm per pixel
     
     # Return radii results
     return radii
 
 # Display ring image from calculated radii
-def ShowRingFromRadii(radii):
+def ShowRingFromRadii(radii, saveImage=None):
     fig, ax = plt.subplots()
     for radius in radii:
         circle = ptchs.Circle( (0,0), radius, fill=False)
@@ -123,20 +122,46 @@ def ShowRingFromRadii(radii):
     ax.set_xlim(-1 * max(radii) - 100, max(radii) + 100)
     ax.set_ylim(-1 * max(radii) - 100, max(radii) + 100)
     ax.set_aspect(1)
-    plt.show()
 
-# Full workflow from image to ring plot
-def SpotsToRing(image):
-    image = CenterImage(image)
-    radii = CalculateRadii(image)
-    ShowRingFromRadii(radii)
+    if saveImage is not None:
+        plt.savefig(saveImage)
+    else:
+        plt.show()
+    
+    plt.clf()
+    plt.close()
+
+# Full workflow from image to radii
+def SpotsToRadii(image, showSteps=False, scale=1):
+    image = ConvertImageToMaxima(image, showSteps)
+    image = CenterImage(image, showSteps)
+    radii = CalculateRadii(image, scale)
+
+    return radii
 
 def main():
-    simImage = skimage.io.imread("PuO_01-3_SinglePoint.png", as_gray=True)
-    expImage = skimage.io.imread("Exp_PuO_01-3_SinglePoint.png", as_gray=True)
+    inDir = "/Users/mitchellmika/Desktop/In"
+    outDir = "/Users/mitchellmika/Desktop/Out"
+    csvFile = f"{outDir}/radii.csv"
 
-    SpotsToRing(simImage)
-    SpotsToRing(expImage)
+    for image in os.listdir(inDir):
+        try:
+            imageName = image
+            savePath = f"{outDir}/{image}"
+            image = f"{inDir}/{image}"
+            image = skimage.util.img_as_float(skimage.io.imread(image, as_gray=True))
+            scaleFactor = (1.0 / 29.8) * 100 # 298 pixels = 10 1/nm for experimental images. Factor of 100 is applied to space out the rings
+            radii = SpotsToRadii(image, showSteps=False, scale=scaleFactor)
+            radii.sort()
+
+            ShowRingFromRadii(radii, saveImage=savePath) 
+
+            with open(csvFile, "a") as f:
+                radii = [imageName] + radii
+                writer = csv.writer(f)
+                writer.writerow(radii)
+        except ValueError:
+            print(f"Cannot open {image}")
 
 if __name__ == "__main__":
     main()
