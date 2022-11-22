@@ -9,7 +9,7 @@ from Utils import *
 import csv
 
 # Find maxima of TEM image
-def ConvertImageToMaxima(image, showPoints=False, saveScatter=False, imgName="default"):
+def ConvertImageToMaxima(image, showScatter=False, saveScatter=False, imgName="default"):
     image = skimage.filters.median(image) # Median filter to despeckle image before finding points
     image -= np.mean(image) * 2
     image *= 2
@@ -20,10 +20,10 @@ def ConvertImageToMaxima(image, showPoints=False, saveScatter=False, imgName="de
 
     coords = skimage.feature.peak_local_max(image, min_distance=40, threshold_rel=0.5) # TODO: Justify pre-processing steps
 
-    peakMask = np.zeros_like(image, dtype=bool)
-    peakMask[tuple(coords.T)] = True
+    peakImage = np.zeros_like(image, dtype=float)
+    peakImage[tuple(coords.T)] = 1.0
 
-    if showPoints:
+    if showScatter:
         plt.imshow(image, cmap="gray")
         plt.scatter(coords[:,1], coords[:,0])
         plt.show()
@@ -34,9 +34,10 @@ def ConvertImageToMaxima(image, showPoints=False, saveScatter=False, imgName="de
         plt.clf()
         plt.close()
 
-    return peakMask * 1
+    return peakImage
 
 # Centers an image based on position of dots
+# Not used in standard workflow because translation blurs the image
 def CenterImage(image, showTranslate=False):
 
     # Find center point
@@ -94,21 +95,22 @@ def CenterImage(image, showTranslate=False):
 
 # Calculate radius from central most point
 def CalculateRadii(image, scale=1):
-    # Catalog all the points in the image
+    # Find all points in image
     rows, cols = np.where(image != 0)
     points = list(zip(cols,rows))
 
-    # Find center point
-    height, width = GetImageSize(image, path=False)
-    center = (width/2, height/2)
+    # Find centroid of points
+    xAvg = np.average(cols)
+    yAvg = np.average(rows)
+    centroid = (xAvg, yAvg)
 
-    # Find point closest to center
-    distances = []
-    pointDistance = lambda p1,p2: math.sqrt( (p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 )
+    # Find point closest to centroid
+    pointDistance = lambda p1,p2: math.sqrt( (p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 ) # Accepts (x,y) tuple
+    distanceToCentroid = []
     for point in points:
-        distances.append(pointDistance(point, center))
-    minDist = min(distances)
-    minDistIndex = distances.index(minDist)
+        distanceToCentroid.append(pointDistance(point,centroid))
+    minDist = min(distanceToCentroid)
+    minDistIndex = distanceToCentroid.index(minDist)
     centralPoint = points[minDistIndex]
 
     # Calculate distance from center point to all other points
@@ -117,6 +119,7 @@ def CalculateRadii(image, scale=1):
         radii.append(pointDistance(point, centralPoint) * scale) # Scale is 1/nm per pixel
     
     # Return radii results
+    radii.pop(0) # Removes 0 radius from list
     return radii
 
 # Display ring image from calculated radii
@@ -144,11 +147,10 @@ def ShowRingFromRadii(radii, saveImage=False, imgName="default"):
 def SpotsToRadii(image, showSteps=False, scale=1, saveRing=False, saveScatter=False, imgName="default"):
     image = ConvertImageToMaxima(
         image, 
-        showPoints=showSteps, 
+        showScatter=showSteps, 
         saveScatter=saveScatter, 
         imgName=imgName
     )  
-    image = CenterImage(image, showTranslate=showSteps)
     radii = CalculateRadii(image, scale)
     
     if showSteps or saveRing:
