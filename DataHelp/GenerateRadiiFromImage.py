@@ -5,8 +5,21 @@ import os
 import math
 import matplotlib.pyplot as plt
 import matplotlib.patches as ptchs
-from Utils import *
 import csv
+
+def Translate(image, xTransform, yTransform):
+    tr = skimage.transform.EuclideanTransform(translation=[xTransform, yTransform])
+    img = skimage.transform.warp(image, tr)
+    return img
+
+def GetImageSize(image, path=True):
+    # Get image dimensions before processing further
+    if path:
+        image = skimage.io.imread(image)
+    imageHeight = len(image)
+    imageWidth = len(image[0])
+
+    return imageHeight, imageWidth
 
 # Find maxima of TEM image
 def ConvertImageToMaxima(image, showScatter=False, saveScatter=False, imgName="default"):
@@ -18,7 +31,7 @@ def ConvertImageToMaxima(image, showScatter=False, saveScatter=False, imgName="d
     image = skimage.filters.median(image)
     image = skimage.exposure.adjust_gamma(image, 0.6)
 
-    coords = skimage.feature.peak_local_max(image, min_distance=40, threshold_rel=0.5) # TODO: Justify pre-processing steps
+    coords = skimage.feature.peak_local_max(image, min_distance=40, threshold_rel=0.5, num_peaks=21) # TODO: Justify pre-processing steps and num_peaks
 
     peakImage = np.zeros_like(image, dtype=float)
     peakImage[tuple(coords.T)] = 1.0
@@ -93,6 +106,16 @@ def CenterImage(image, showTranslate=False):
 
     return image
 
+# Fill array to certain size with existing values in order to keep consistent input size
+def FillArrayToSize(arr, size):
+
+    if len(arr) < size:
+        numRepetitions = int(size / len(arr)) + 1
+        arr *= numRepetitions
+        arr = arr[0:size]
+    
+    return arr
+
 # Calculate radius from central most point
 def CalculateRadii(image, scale=1):
     # Find all points in image
@@ -118,8 +141,11 @@ def CalculateRadii(image, scale=1):
     for point in points:
         radii.append(pointDistance(point, centralPoint) * scale) # Scale is 1/nm per pixel
     
-    # Return radii results
+    # Process radii results
+    radii.sort()
     radii.pop(0) # Removes 0 radius from list
+    radii = FillArrayToSize(radii, 20)
+
     return radii
 
 # Display ring image from calculated radii
@@ -144,7 +170,7 @@ def ShowRingFromRadii(radii, saveImage=False, imgName="default"):
     plt.close()
 
 # Full workflow from image to radii
-def SpotsToRadii(image, showSteps=False, scale=1, saveRing=False, saveScatter=False, imgName="default"):
+def ImageToRadii(image, scale=1, showSteps=False,  saveRing=False, saveScatter=False, imgName="default"):
     image = ConvertImageToMaxima(
         image, 
         showScatter=showSteps, 
@@ -166,11 +192,11 @@ def PreProcessDir(inDir, outDir, showSteps=False, saveRing=False, saveScatter=Fa
     for imageName in os.listdir(inDir):
         try:
             image = skimage.util.img_as_float(skimage.io.imread(f"{inDir}/{imageName}", as_gray=True))
-            scaleFactor = (1.0 / 29.8) # 298 pixels = 10 1/nm for experimental images
+            scaleFactor = 1.0 / 29.8 # 298 pixels = 10 1/nm for experimental images
             
-            radii = SpotsToRadii(image, 
-                showSteps=showSteps, 
+            radii = ImageToRadii(image,
                 scale=scaleFactor, 
+                showSteps=showSteps,  
                 saveRing=saveRing, 
                 saveScatter=saveScatter, 
                 imgName=f"{outDir}/{os.path.splitext(imageName)[0]}"
@@ -186,10 +212,34 @@ def PreProcessDir(inDir, outDir, showSteps=False, saveRing=False, saveScatter=Fa
         except ValueError:
             print(f"Cannot open {image}")
 
+# Take structured directory containing labeled subdirectories with image and create csv to be read into tf dataset
+def GenerateCsvFromStructuredDir(inDir, csvPath):
+    features = []
+    for subdir in os.listdir(inDir):
+        print(f"Processing sub-directory {subdir}")
+        count = 1
+        try:
+            for image in os.listdir(f"{inDir}/{subdir}"):
+                try:
+                    print(f"Processing {count}/{len(os.listdir(f'{inDir}/{subdir}'))}")
+                    readImage = io.imread(f"{inDir}/{subdir}/{image}", as_gray=True)
+                    scaleFactor = 1.0 / 29.8
+                    radii = ImageToRadii(readImage, scaleFactor)
+                    radii = [subdir] + radii
+                    features.append(radii)
+                except ValueError:
+                    print(f"Unable to process {image}")
+                count += 1
+        except NotADirectoryError:
+            pass
+
+    with open(csvPath, "w") as f:
+        writer = csv.writer(f)
+        writer.writerows(features)
+    
 def main():
     inDir = "/Users/mitchellmika/Desktop/In"
-    outDir = "/Users/mitchellmika/Desktop/Out"
-    PreProcessDir(inDir, outDir, False, True, True)
+    GenerateCsvFromStructuredDir(inDir, "./LabelledRadii.csv")
 
 if __name__ == "__main__":
     main()

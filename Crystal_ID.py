@@ -5,11 +5,13 @@ import tensorflow as tf
 import os
 from skimage import io
 import time
+import pandas as pd
 import csv
-from DataHelp.ImageVisualization import PreviewDataSet
+from DataHelp.GenerateRadiiFromImage import ImageToRadii
 from models.GenericCNN import CreateGenericCNN
+from models.RadiiDNN import CreateRadiiDNN
 
-def main():
+def RunCNN(saveModel=False):
     imageHeight = 200 # This is going to distort the image, which will make classifying based on point distance very difficult (impossible)
     imageWidth = 200
 
@@ -66,6 +68,61 @@ def main():
 
         score = tf.nn.softmax(prediction[0])
         print(f"Image {key} is predicted to be {class_names[np.argmax(score)]} with {100*np.max(score):.2f}% confidence.")
+
+def RunRadiiDNN(saveModel=False):
+    trainingCsv = "TrainingRadii.csv"
+    testCsv = "TestRadii.csv"
+
+    headers = ["Label"]
+    for i in range(20):
+        headers.append(f"Radius_{i}")
+
+    trainingSet = pd.read_csv(trainingCsv, names=headers)
+    testSet = pd.read_csv(testCsv, names=headers)
+
+    trainingLabels = trainingSet.pop("Label")
+    testLabels = testSet.pop("Label")
+    trainingLabels = np.array(trainingLabels)
+    testLabels = np.array(testLabels)
+
+    uniqueLabels = np.unique(trainingLabels)
+    numClasses = len(uniqueLabels)
+
+    yTrain = []
+    for label in trainingLabels:
+        temp = np.zeros(numClasses)
+        temp[np.where(uniqueLabels==label)[0][0]] = 1.0
+        yTrain.append(temp)
+    yTrain = np.array(yTrain)
+
+    yTest = []
+    for label in testLabels:
+        temp = np.zeros(numClasses)
+        temp[np.where(uniqueLabels==label)[0][0]] = 1.0
+        yTest.append(temp)
+    yTest = np.array(yTest)
+
+    trainingFeatures = trainingSet.copy()
+    testFeatures = testSet.copy()
+    xTrain = np.array(trainingFeatures)
+    xTest = np.array(testFeatures)
+
+    model = CreateRadiiDNN(numClasses)
+    model.compile(
+        loss=tf.keras.losses.CategoricalCrossentropy(),
+        optimizer=tf.keras.optimizers.Adam(),
+        metrics=["accuracy"])
+    model.fit(xTrain, yTrain, epochs=50)
+ 
+    preds = model.predict(xTest)
+    for i in range(len(preds)):
+        predClass = uniqueLabels[np.argmax(preds[i])]
+        trueClass = uniqueLabels[np.argmax(yTest[i])]
+        print(f"Predicted: {predClass}, True: {trueClass}")
+
+
+def main():
+    RunRadiiDNN()
 
 if __name__ == "__main__":
     main()
