@@ -1,4 +1,3 @@
-from email.mime import base
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -7,9 +6,19 @@ from skimage import io
 import time
 import pandas as pd
 import csv
-from DataHelp.GenerateRadiiFromImage import ImageToRadii
 from models.GenericCNN import CreateGenericCNN
 from models.RadiiDNN import CreateRadiiDNN
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
 def RunCNN(saveModel=False):
     imageHeight = 200 # This is going to distort the image, which will make classifying based on point distance very difficult (impossible)
@@ -104,21 +113,34 @@ def RunRadiiDNN(saveModel=False):
 
     trainingFeatures = trainingSet.copy()
     testFeatures = testSet.copy()
+
     xTrain = np.array(trainingFeatures)
+    # for row in xTrain:
+    #     np.random.shuffle(row)
+    np.random.shuffle(xTrain)
+    
     xTest = np.array(testFeatures)
+    # for row in xTest:
+    #     np.random.shuffle(row)
+    np.random.shuffle(xTest)
+
 
     model = CreateRadiiDNN(numClasses)
     model.compile(
-        loss=tf.keras.losses.CategoricalCrossentropy(),
+        loss=tf.keras.losses.CategoricalCrossentropy(from_logits=False), # False if softmax used in last layer
         optimizer=tf.keras.optimizers.Adam(),
         metrics=["accuracy"])
-    model.fit(xTrain, yTrain, epochs=50)
+    model.fit(xTrain, yTrain, epochs=20, validation_split=0.05)
  
     preds = model.predict(xTest)
     for i in range(len(preds)):
         predClass = uniqueLabels[np.argmax(preds[i])]
         trueClass = uniqueLabels[np.argmax(yTest[i])]
-        print(f"Predicted: {predClass}, True: {trueClass}")
+        if trueClass == predClass:
+            printColor = bcolors.OKGREEN
+        else:
+            printColor = bcolors.FAIL
+        print(f"True: {trueClass:10} {printColor} Predicted: {predClass:10} {100 * np.max(preds[i]):.2f}% {bcolors.ENDC}")
 
 
 def main():

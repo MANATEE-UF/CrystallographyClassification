@@ -7,11 +7,13 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as ptchs
 import csv
 
+# Utility to translate image (original + xTransform, original + yTransform)
 def Translate(image, xTransform, yTransform):
     tr = skimage.transform.EuclideanTransform(translation=[xTransform, yTransform])
     img = skimage.transform.warp(image, tr)
     return img
 
+# Utility to get size of image
 def GetImageSize(image, path=True):
     # Get image dimensions before processing further
     if path:
@@ -22,8 +24,8 @@ def GetImageSize(image, path=True):
     return imageHeight, imageWidth
 
 # Find maxima of TEM image
-def ConvertImageToMaxima(image, showScatter=False, saveScatter=False, imgName="default"):
-    image = skimage.filters.median(image) # Median filter to despeckle image before finding points
+def ConvertImageToMaxima(image, saveScatter=False, imgName="default"):
+    image = skimage.filters.median(image)
     image -= np.mean(image) * 2
     image *= 2
     image = np.where(image < 0, 0, image)
@@ -36,11 +38,7 @@ def ConvertImageToMaxima(image, showScatter=False, saveScatter=False, imgName="d
     peakImage = np.zeros_like(image, dtype=float)
     peakImage[tuple(coords.T)] = 1.0
 
-    if showScatter:
-        plt.imshow(image, cmap="gray")
-        plt.scatter(coords[:,1], coords[:,0])
-        plt.show()
-    elif saveScatter:
+    if saveScatter:
         plt.imshow(image, cmap="gray")
         plt.scatter(coords[:,1], coords[:,0])
         plt.savefig(f"{imgName}_scatter.jpg")
@@ -117,7 +115,7 @@ def FillArrayToSize(arr, size):
     return arr
 
 # Calculate radius from central most point
-def CalculateRadii(image, scale=1):
+def CalculateRadii(image, scale=1, fill=None):
     # Find all points in image
     rows, cols = np.where(image != 0)
     points = list(zip(cols,rows))
@@ -144,12 +142,13 @@ def CalculateRadii(image, scale=1):
     # Process radii results
     radii.sort()
     radii.pop(0) # Removes 0 radius from list
-    radii = FillArrayToSize(radii, 20)
+    if fill is not None:
+        radii = FillArrayToSize(radii, fill)
 
     return radii
 
 # Display ring image from calculated radii
-def ShowRingFromRadii(radii, saveImage=False, imgName="default"):
+def ShowRingFromRadii(radii, saveRing=False, imgName="default"):
     fig, ax = plt.subplots()
     for radius in radii:
         circle = ptchs.Circle( (0,0), radius, fill=False)
@@ -161,7 +160,7 @@ def ShowRingFromRadii(radii, saveImage=False, imgName="default"):
     ax.set_aspect(1)
     ax.grid(True, alpha=0.5)
 
-    if saveImage:
+    if saveRing:
         plt.savefig(f"{imgName}_ring.jpg")
     else:
         plt.show()
@@ -169,50 +168,30 @@ def ShowRingFromRadii(radii, saveImage=False, imgName="default"):
     plt.clf()
     plt.close()
 
-# Full workflow from image to radii
-def ImageToRadii(image, scale=1, showSteps=False,  saveRing=False, saveScatter=False, imgName="default"):
-    image = ConvertImageToMaxima(
-        image, 
-        showScatter=showSteps, 
-        saveScatter=saveScatter, 
-        imgName=imgName
-    )  
-    radii = CalculateRadii(image, scale)
-    
-    if showSteps or saveRing:
-        ShowRingFromRadii(radii, saveImage=saveRing, imgName=imgName)
+# Workflow from image to radii
+def DiffractionImageToRadii(image, scale=1, fill=None):
+    image = ConvertImageToMaxima(image)  
+    radii = CalculateRadii(image, scale, fill)
 
     return radii
 
-# Pre-process directory of TEM images
-# Saves radii values to csv file and optionally saves a ring image and scatter plot of found maxima for debugging
-def PreProcessDir(inDir, outDir, showSteps=False, saveRing=False, saveScatter=False):
-    csvFile = f"{outDir}/radii.csv"
-
+# Saves a ring image and/or scatter plot of found images in inDir to outDir for debugging
+def VisualizeRadiiTransform(inDir, outDir, saveRing=False, saveScatter=False):
     for imageName in os.listdir(inDir):
         try:
             image = skimage.util.img_as_float(skimage.io.imread(f"{inDir}/{imageName}", as_gray=True))
             scaleFactor = 1.0 / 29.8 # 298 pixels = 10 1/nm for experimental images
-            
-            radii = ImageToRadii(image,
-                scale=scaleFactor, 
-                showSteps=showSteps,  
-                saveRing=saveRing, 
-                saveScatter=saveScatter, 
-                imgName=f"{outDir}/{os.path.splitext(imageName)[0]}"
-            )
-            
-            radii.sort()
 
-            with open(csvFile, "a") as f:
-                radii = [imageName] + radii
-                writer = csv.writer(f)
-                writer.writerow(radii)
-        
+            image = ConvertImageToMaxima(image, saveScatter=saveScatter, imgName=f"{outDir}/{os.path.splitext(imageName)[0]}_scatter")
+            radii = CalculateRadii(image, scale=scaleFactor, fill=None)
+            ShowRingFromRadii(radii, saveRing=saveRing, imgName=f"{outDir}/{os.path.splitext(imageName)[0]}_ring")
+
         except ValueError:
             print(f"Cannot open {image}")
 
 # Take structured directory containing labeled subdirectories with image and create csv to be read into tf dataset
+# TODO: Create training and testing/validation split
+# TODO: Change csvPath to outDir and use default names
 def GenerateCsvFromStructuredDir(inDir, csvPath):
     features = []
     for subdir in os.listdir(inDir):
@@ -222,9 +201,9 @@ def GenerateCsvFromStructuredDir(inDir, csvPath):
             for image in os.listdir(f"{inDir}/{subdir}"):
                 try:
                     print(f"Processing {count}/{len(os.listdir(f'{inDir}/{subdir}'))}")
-                    readImage = io.imread(f"{inDir}/{subdir}/{image}", as_gray=True)
+                    readImage = skimage.util.img_as_float(skimage.io.imread(f"{inDir}/{subdir}/{image}", as_gray=True))
                     scaleFactor = 1.0 / 29.8
-                    radii = ImageToRadii(readImage, scaleFactor)
+                    radii = DiffractionImageToRadii(readImage, scaleFactor, fill=20)
                     radii = [subdir] + radii
                     features.append(radii)
                 except ValueError:
@@ -239,7 +218,9 @@ def GenerateCsvFromStructuredDir(inDir, csvPath):
     
 def main():
     inDir = "/Users/mitchellmika/Desktop/In"
+    outDir = "/Users/mitchellmika/Desktop/Out"
     GenerateCsvFromStructuredDir(inDir, "./LabelledRadii.csv")
+    #PreProcessDir(inDir, outDir)
 
 if __name__ == "__main__":
     main()
