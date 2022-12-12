@@ -20,6 +20,7 @@ class bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+# FIXME: Auto generate test set rather than using a DataToPredict directory
 def RunCNN(saveModel=False):
     imageHeight = 200 # This is going to distort the image, which will make classifying based on point distance very difficult (impossible)
     imageWidth = 200
@@ -78,9 +79,11 @@ def RunCNN(saveModel=False):
         score = tf.nn.softmax(prediction[0])
         print(f"Image {key} is predicted to be {class_names[np.argmax(score)]} with {100*np.max(score):.2f}% confidence.")
 
+# TODO: Add confusion matrix for validation
+# TODO: Implement imbalanced data handling
 def RunRadiiDNN(saveModel=False):
-    trainingCsv = "TrainingRadii.csv"
-    testCsv = "TestRadii.csv"
+    trainingCsv = "FourZones_20Fill20Max/TrainingData.csv"
+    testCsv = "FourZones_20Fill20Max/TestingData.csv"
 
     headers = ["Label"]
     for i in range(20):
@@ -91,11 +94,16 @@ def RunRadiiDNN(saveModel=False):
 
     trainingLabels = trainingSet.pop("Label")
     testLabels = testSet.pop("Label")
-    trainingLabels = np.array(trainingLabels)
+    trainingLabels = np.array(trainingLabels, dtype=str)
     testLabels = np.array(testLabels)
 
     uniqueLabels = np.unique(trainingLabels)
     numClasses = len(uniqueLabels)
+
+    print()
+    print("Trained on the following data:")
+    for label in uniqueLabels:
+        print(f"{label}: {len(np.where(trainingLabels==label)[0])} instances")
 
     yTrain = []
     for label in trainingLabels:
@@ -115,13 +123,13 @@ def RunRadiiDNN(saveModel=False):
     testFeatures = testSet.copy()
 
     xTrain = np.array(trainingFeatures)
-    # for row in xTrain:
-    #     np.random.shuffle(row)
+    for row in xTrain:
+        np.random.shuffle(row)
     np.random.shuffle(xTrain)
     
     xTest = np.array(testFeatures)
-    # for row in xTest:
-    #     np.random.shuffle(row)
+    for row in xTest:
+        np.random.shuffle(row)
     np.random.shuffle(xTest)
 
 
@@ -130,9 +138,16 @@ def RunRadiiDNN(saveModel=False):
         loss=tf.keras.losses.CategoricalCrossentropy(from_logits=False), # False if softmax used in last layer
         optimizer=tf.keras.optimizers.Adam(),
         metrics=["accuracy"])
-    model.fit(xTrain, yTrain, epochs=20, validation_split=0.05)
- 
+    model.fit(xTrain, yTrain, epochs=200)
+    
+    def PrintProbs(input):
+        string = "[ "
+        for i in range(len(input)):
+            string += f"{input[i]:.2f}, "
+        return string + "]"
+
     preds = model.predict(xTest)
+    print(uniqueLabels)
     for i in range(len(preds)):
         predClass = uniqueLabels[np.argmax(preds[i])]
         trueClass = uniqueLabels[np.argmax(yTest[i])]
@@ -140,7 +155,7 @@ def RunRadiiDNN(saveModel=False):
             printColor = bcolors.OKGREEN
         else:
             printColor = bcolors.FAIL
-        print(f"True: {trueClass:10} {printColor} Predicted: {predClass:10} {100 * np.max(preds[i]):.2f}% {bcolors.ENDC}")
+        print(f"True: {trueClass:10} {printColor} Predicted: {predClass:10} {100 * np.max(preds[i]):.2f}% - {PrintProbs(preds[i])} {bcolors.ENDC}")
 
 
 def main():

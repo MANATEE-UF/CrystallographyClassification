@@ -24,7 +24,7 @@ def GetImageSize(image, path=True):
     return imageHeight, imageWidth
 
 # Find maxima of TEM image
-def ConvertImageToMaxima(image, saveScatter=False, imgName="default"):
+def ConvertImageToMaxima(image, saveScatter=False, imgName="default", maxPeaks=float('inf')):
     image = skimage.filters.median(image)
     image -= np.mean(image) * 2
     image *= 2
@@ -33,7 +33,7 @@ def ConvertImageToMaxima(image, saveScatter=False, imgName="default"):
     image = skimage.filters.median(image)
     image = skimage.exposure.adjust_gamma(image, 0.6)
 
-    coords = skimage.feature.peak_local_max(image, min_distance=40, threshold_rel=0.5, num_peaks=21) # TODO: Justify pre-processing steps and num_peaks
+    coords = skimage.feature.peak_local_max(image, min_distance=40, threshold_rel=0.5, num_peaks=maxPeaks) # TODO: Justify pre-processing steps and num_peaks
 
     peakImage = np.zeros_like(image, dtype=float)
     peakImage[tuple(coords.T)] = 1.0
@@ -41,7 +41,7 @@ def ConvertImageToMaxima(image, saveScatter=False, imgName="default"):
     if saveScatter:
         plt.imshow(image, cmap="gray")
         plt.scatter(coords[:,1], coords[:,0])
-        plt.savefig(f"{imgName}_scatter.jpg")
+        plt.savefig(f"{imgName}")
         plt.clf()
         plt.close()
 
@@ -110,8 +110,8 @@ def FillArrayToSize(arr, size):
     if len(arr) < size:
         numRepetitions = int(size / len(arr)) + 1
         arr *= numRepetitions
-        arr = arr[0:size]
     
+    arr = arr[0:size]
     return arr
 
 # Calculate radius from central most point
@@ -161,7 +161,7 @@ def ShowRingFromRadii(radii, saveRing=False, imgName="default"):
     ax.grid(True, alpha=0.5)
 
     if saveRing:
-        plt.savefig(f"{imgName}_ring.jpg")
+        plt.savefig(f"{imgName}")
     else:
         plt.show()
     
@@ -169,8 +169,8 @@ def ShowRingFromRadii(radii, saveRing=False, imgName="default"):
     plt.close()
 
 # Workflow from image to radii
-def DiffractionImageToRadii(image, scale=1, fill=None):
-    image = ConvertImageToMaxima(image)  
+def DiffractionImageToRadii(image, scale=1, fill=None, maxPeaks=float('inf')):
+    image = ConvertImageToMaxima(image, maxPeaks=maxPeaks)  
     radii = CalculateRadii(image, scale, fill)
 
     return radii
@@ -182,45 +182,64 @@ def VisualizeRadiiTransform(inDir, outDir, saveRing=False, saveScatter=False):
             image = skimage.util.img_as_float(skimage.io.imread(f"{inDir}/{imageName}", as_gray=True))
             scaleFactor = 1.0 / 29.8 # 298 pixels = 10 1/nm for experimental images
 
-            image = ConvertImageToMaxima(image, saveScatter=saveScatter, imgName=f"{outDir}/{os.path.splitext(imageName)[0]}_scatter")
+            image = ConvertImageToMaxima(image, saveScatter=saveScatter, imgName=f"{outDir}/{os.path.splitext(imageName)[0]}_scatter.jpg")
             radii = CalculateRadii(image, scale=scaleFactor, fill=None)
-            ShowRingFromRadii(radii, saveRing=saveRing, imgName=f"{outDir}/{os.path.splitext(imageName)[0]}_ring")
+            ShowRingFromRadii(radii, saveRing=saveRing, imgName=f"{outDir}/{os.path.splitext(imageName)[0]}_ring.jpg")
 
         except ValueError:
-            print(f"Cannot open {image}")
+            print(f"Cannot open {imageName}")
 
 # Take structured directory containing labeled subdirectories with image and create csv to be read into tf dataset
-# TODO: Create training and testing/validation split
-# TODO: Change csvPath to outDir and use default names
-def GenerateCsvFromStructuredDir(inDir, csvPath):
-    features = []
+# FIXME: Test csv is empty
+def GenerateCsvFromStructuredDir(inDir, outDir, fill=None, maxPeaks=float('inf')):
+    # Create 2D array that holds class and list of radii
+    trainData = []
+    uniqueClasses = []
     for subdir in os.listdir(inDir):
         print(f"Processing sub-directory {subdir}")
         count = 1
         try:
+            uniqueClasses.append(subdir)
             for image in os.listdir(f"{inDir}/{subdir}"):
                 try:
                     print(f"Processing {count}/{len(os.listdir(f'{inDir}/{subdir}'))}")
                     readImage = skimage.util.img_as_float(skimage.io.imread(f"{inDir}/{subdir}/{image}", as_gray=True))
                     scaleFactor = 1.0 / 29.8
-                    radii = DiffractionImageToRadii(readImage, scaleFactor, fill=20)
+                    radii = DiffractionImageToRadii(readImage, scaleFactor, fill=fill, maxPeaks=maxPeaks)
                     radii = [subdir] + radii
-                    features.append(radii)
+                    trainData.append(radii)
                 except ValueError:
                     print(f"Unable to process {image}")
                 count += 1
         except NotADirectoryError:
             pass
 
-    with open(csvPath, "w") as f:
+    testData = []
+    for label in uniqueClasses:
+        indices = np.where(trainData[:][0]==label)[0]
+        numItemsInClass = len(indices)
+        numItemsInTestSet = int(numItemsInClass * 0.1) if int(numItemsInClass * 0.1) >= 1 else 0
+        indicesToPullTest = np.random.choice(indices, numItemsInTestSet, replace=False)
+
+        for index in indicesToPullTest:
+            testData.append(trainData.pop(index))
+
+    with open(f"{outDir}/TrainingData.csv", "w") as f:
         writer = csv.writer(f)
-        writer.writerows(features)
+        writer.writerows(trainData)
     
+    with open(f"{outDir}/TestingData.csv", "w") as f:
+        writer = csv.writer(f)
+        writer.writerows(testData)
+
+# TODO: Implement fill for class cardinality (use highest cardinality)
+# TODO: Make max num peaks an argument here
 def main():
-    inDir = "/Users/mitchellmika/Desktop/In"
-    outDir = "/Users/mitchellmika/Desktop/Out"
-    GenerateCsvFromStructuredDir(inDir, "./LabelledRadii.csv")
-    #PreProcessDir(inDir, outDir)
+    inDir = "/Users/mitchellmika/Desktop/FourZones"
+    outDir = "FourZones_NoFillNoMax"
+
+    GenerateCsvFromStructuredDir(inDir, outDir,fill=100, maxPeaks=10)
+    #VisualizeRadiiTransform(inDir, outDir, True, True)
 
 if __name__ == "__main__":
     main()
