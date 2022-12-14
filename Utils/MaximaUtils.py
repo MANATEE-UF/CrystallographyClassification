@@ -1,8 +1,10 @@
 import skimage
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 # Find maxima of TEM image
+# Returns (rows,cols) maxima points
 def GetImageMaxima(image, maxPeaks=float('inf')):
     image = skimage.filters.median(image)
     image -= np.mean(image) * 2
@@ -29,3 +31,9 @@ def SaveMaximaPlot(maximaCoords, image, saveName):
     plt.savefig(f"{saveName}")
     plt.clf()
     plt.close()
+
+def DistanceEq2D(p1, p2):
+    return math.sqrt( (p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 )
+
+def SlopeEq2D(p1, p2):
+    return (p2[1] - p1[1]) / (p2[0] - p1[0])

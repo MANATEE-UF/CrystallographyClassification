@@ -56,10 +56,10 @@ def GenerateCsv(inDir, outDir, fill=None, maxPeaks=float('inf')):
         writer.writerows(testData)
 
 def main():
-    inDir = "/Users/mitchellmika/Desktop/FourZones"
-    outDir = "/Users/mitchellmika/Desktop/Out"
+    inDir = "/Users/mitchellmika/Desktop/SixZonesReflections"
+    outDir = "SixZonesReflections"
 
-    GenerateCsv(inDir, outDir,fill=100)
+    GenerateCsv(inDir, outDir,fill=50)
 
 if __name__ == "__main__":
     main()

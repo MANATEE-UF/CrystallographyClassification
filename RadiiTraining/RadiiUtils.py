@@ -24,10 +24,9 @@ def CalculateRadii(maximaCoords, scale=1, fill=None):
     centroid = (xAvg, yAvg)
 
     # Find point closest to centroid
-    pointDistance = lambda p1,p2: math.sqrt( (p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 ) # Accepts (x,y) tuple
     distanceToCentroid = []
     for point in points:
-        distanceToCentroid.append(pointDistance(point,centroid))
+        distanceToCentroid.append(Utils.DistanceEq2D(point,centroid))
     minDist = min(distanceToCentroid)
     minDistIndex = distanceToCentroid.index(minDist)
     centralPoint = points[minDistIndex]
@@ -35,7 +34,7 @@ def CalculateRadii(maximaCoords, scale=1, fill=None):
     # Calculate distance from center point to all other points
     radii = []
     for point in points:
-        radii.append(pointDistance(point, centralPoint) * scale) # Scale is 1/nm per pixel
+        radii.append(Utils.DistanceEq2D(point, centralPoint) * scale) # Scale is 1/nm per pixel
     
     # Process radii results
     radii.sort()
