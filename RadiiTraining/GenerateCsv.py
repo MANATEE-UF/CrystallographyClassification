@@ -39,7 +39,7 @@ def GenerateCsv(inDir, outDir, fill=None, maxPeaks=float('inf')):
 
     testData = []
     for label in uniqueClasses:
-        indices = np.where(trainData[:][0]==label)[0]
+        indices = np.where(np.array(trainData)[:,0]==label)[0]
         numItemsInClass = len(indices)
         numItemsInTestSet = int(numItemsInClass * 0.1) if int(numItemsInClass * 0.1) >= 1 else 0
         indicesToPullTest = np.random.choice(indices, numItemsInTestSet, replace=False)
