@@ -7,7 +7,7 @@ import time
 import pandas as pd
 import csv
 from models.GenericCNN import CreateGenericCNN
-from models.RadiiDNN import CreateRadiiDNN
+from models.DNN import CreateDNN
 
 class bcolors:
     HEADER = '\033[95m'
@@ -79,14 +79,12 @@ def RunCNN(saveModel=False):
         score = tf.nn.softmax(prediction[0])
         print(f"Image {key} is predicted to be {class_names[np.argmax(score)]} with {100*np.max(score):.2f}% confidence.")
 
-# TODO: Add confusion matrix for validation
-# TODO: Implement imbalanced data handling
 def RunRadiiDNN(saveModel=False):
-    trainingCsv = "FourZones_20Fill20Max/TrainingData.csv"
-    testCsv = "FourZones_20Fill20Max/TestingData.csv"
+    trainingCsv = "FourZones/TrainingData.csv"
+    testCsv = "FourZones/TestingData.csv"
 
     headers = ["Label"]
-    for i in range(20):
+    for i in range(50):
         headers.append(f"Radius_{i}")
 
     trainingSet = pd.read_csv(trainingCsv, names=headers)
@@ -123,22 +121,15 @@ def RunRadiiDNN(saveModel=False):
     testFeatures = testSet.copy()
 
     xTrain = np.array(trainingFeatures)
-    for row in xTrain:
-        np.random.shuffle(row)
-    np.random.shuffle(xTrain)
     
     xTest = np.array(testFeatures)
-    for row in xTest:
-        np.random.shuffle(row)
-    np.random.shuffle(xTest)
 
-
-    model = CreateRadiiDNN(numClasses)
+    model = CreateDNN(numClasses)
     model.compile(
         loss=tf.keras.losses.CategoricalCrossentropy(from_logits=False), # False if softmax used in last layer
         optimizer=tf.keras.optimizers.Adam(),
         metrics=["accuracy"])
-    model.fit(xTrain, yTrain, epochs=200)
+    model.fit(xTrain, yTrain, validation_data=(xTest, yTest), epochs=200)
     
     def PrintProbs(input):
         string = "[ "
@@ -157,9 +148,80 @@ def RunRadiiDNN(saveModel=False):
             printColor = bcolors.FAIL
         print(f"True: {trueClass:10} {printColor} Predicted: {predClass:10} {100 * np.max(preds[i]):.2f}% - {PrintProbs(preds[i])} {bcolors.ENDC}")
 
+# OH MY GOD I WAS SHUFFLING THE X DATA AND NOT CHANGING THE Y DATA
+def RunLatticeDNN(saveModel=False):
+    trainingCsv = "LatticeFourZones/TrainingData.csv"
+    testCsv = "LatticeFourZones/TestingData.csv"
+
+    headers = ["Label", "d1", "d2", "theta", "discriminant"]
+
+    trainingSet = pd.read_csv(trainingCsv, names=headers)
+    testSet = pd.read_csv(testCsv, names=headers)
+
+    trainingLabels = trainingSet.pop("Label")
+    testLabels = testSet.pop("Label")
+    trainingLabels = np.array(trainingLabels, dtype=str)
+    testLabels = np.array(testLabels)
+
+    uniqueLabels = np.unique(trainingLabels)
+    numClasses = len(uniqueLabels)
+
+    print()
+    print("Trained on the following data:")
+    for label in uniqueLabels:
+        print(f"{label}: {len(np.where(trainingLabels==label)[0])} instances")
+
+    yTrain = []
+    for label in trainingLabels:
+        temp = np.zeros(numClasses)
+        temp[np.where(uniqueLabels==label)[0][0]] = 1.0
+        yTrain.append(temp)
+    yTrain = np.array(yTrain)
+
+    yTest = []
+    for label in testLabels:
+        temp = np.zeros(numClasses)
+        temp[np.where(uniqueLabels==label)[0][0]] = 1.0
+        yTest.append(temp)
+    yTest = np.array(yTest)
+
+    trainingFeatures = trainingSet.copy()
+    testFeatures = testSet.copy()
+
+    xTrain = np.array(trainingFeatures)
+    # np.random.shuffle(xTrain)
+    
+    xTest = np.array(testFeatures)
+    # np.random.shuffle(xTest)
+
+
+    model = CreateDNN(numClasses)
+    model.compile(
+        loss=tf.keras.losses.CategoricalCrossentropy(from_logits=False), # False if softmax used in last layer
+        optimizer=tf.keras.optimizers.Adam(),
+        metrics=["accuracy"])
+    model.fit(xTrain, yTrain, validation_data=(xTest, yTest), epochs=200)
+    
+    def PrintProbs(input):
+        string = "[ "
+        for i in range(len(input)):
+            string += f"{input[i]:.2f}, "
+        return string + "]"
+
+    preds = model.predict(xTest)
+    print(uniqueLabels)
+    for i in range(len(preds)):
+        predClass = uniqueLabels[np.argmax(preds[i])]
+        trueClass = uniqueLabels[np.argmax(yTest[i])]
+        if trueClass == predClass:
+            printColor = bcolors.OKGREEN
+        else:
+            printColor = bcolors.FAIL
+        print(f"True: {trueClass:10} {printColor} Predicted: {predClass:10} {100 * np.max(preds[i]):.2f}% - {PrintProbs(preds[i])} {bcolors.ENDC}")
 
 def main():
-    RunRadiiDNN()
+    #RunRadiiDNN()
+    RunLatticeDNN()
 
 if __name__ == "__main__":
     main()
