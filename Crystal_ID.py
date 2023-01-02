@@ -80,8 +80,8 @@ def RunCNN(saveModel=False):
         print(f"Image {key} is predicted to be {class_names[np.argmax(score)]} with {100*np.max(score):.2f}% confidence.")
 
 def RunRadiiDNN(saveModel=False):
-    trainingCsv = "FourZones/TrainingData.csv"
-    testCsv = "FourZones/TestingData.csv"
+    trainingCsv = "RadiiTraining/Data/FourZones/TrainingData.csv"
+    testCsv = "RadiiTraining/Data/FourZones/TestingData.csv"
 
     headers = ["Label"]
     for i in range(50):
@@ -146,14 +146,14 @@ def RunRadiiDNN(saveModel=False):
             printColor = bcolors.OKGREEN
         else:
             printColor = bcolors.FAIL
-        print(f"True: {trueClass:10} {printColor} Predicted: {predClass:10} {100 * np.max(preds[i]):.2f}% - {PrintProbs(preds[i])} {bcolors.ENDC}")
+        print(f"True: {trueClass:10} {printColor} Predicted: {predClass:10} {100 * np.max(preds[i]):.2f}% {bcolors.ENDC}")#- {PrintProbs(preds[i])} {bcolors.ENDC}")
 
-# OH MY GOD I WAS SHUFFLING THE X DATA AND NOT CHANGING THE Y DATA
+# TODO: Look into sklearn.preprocessing as method of one hot encoding, pg 67 of ml book
 def RunLatticeDNN(saveModel=False):
-    trainingCsv = "LatticeFourZones/TrainingData.csv"
-    testCsv = "LatticeFourZones/TestingData.csv"
+    trainingCsv = "LatticeTraining/Data/ExpZoneReducedThreeFeatures/TrainingData.csv"
+    testCsv = "LatticeTraining/Data/ExpZoneReducedThreeFeatures/TestingData.csv"
 
-    headers = ["Label", "d1", "d2", "theta", "discriminant"]
+    headers = ["Label", "d1", "d2", "theta"]#, "discriminant"]
 
     trainingSet = pd.read_csv(trainingCsv, names=headers)
     testSet = pd.read_csv(testCsv, names=headers)
@@ -171,36 +171,55 @@ def RunLatticeDNN(saveModel=False):
     for label in uniqueLabels:
         print(f"{label}: {len(np.where(trainingLabels==label)[0])} instances")
 
+    # One hot encoding
+
+    # Categorical cross entropy
+    # yTrain = []
+    # for label in trainingLabels:
+    #     temp = np.zeros(numClasses)
+    #     temp[np.where(uniqueLabels==label)[0][0]] = 1.0
+    #     yTrain.append(temp)
+    # yTrain = np.array(yTrain)
+
+    # yTest = []
+    # for label in testLabels:
+    #     temp = np.zeros(numClasses)
+    #     temp[np.where(uniqueLabels==label)[0][0]] = 1.0
+    #     yTest.append(temp)
+    # yTest = np.array(yTest)
+
+    # Sparse categorical cross entropy
     yTrain = []
     for label in trainingLabels:
-        temp = np.zeros(numClasses)
-        temp[np.where(uniqueLabels==label)[0][0]] = 1.0
+        temp = np.where(uniqueLabels==label)[0][0]
         yTrain.append(temp)
     yTrain = np.array(yTrain)
 
     yTest = []
     for label in testLabels:
-        temp = np.zeros(numClasses)
-        temp[np.where(uniqueLabels==label)[0][0]] = 1.0
+        temp = np.where(uniqueLabels==label)[0][0]
         yTest.append(temp)
     yTest = np.array(yTest)
+
 
     trainingFeatures = trainingSet.copy()
     testFeatures = testSet.copy()
 
     xTrain = np.array(trainingFeatures)
-    # np.random.shuffle(xTrain)
     
     xTest = np.array(testFeatures)
-    # np.random.shuffle(xTest)
-
 
     model = CreateDNN(numClasses)
+    
     model.compile(
-        loss=tf.keras.losses.CategoricalCrossentropy(from_logits=False), # False if softmax used in last layer
+        loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False), # False if softmax used in last layer
         optimizer=tf.keras.optimizers.Adam(),
         metrics=["accuracy"])
-    model.fit(xTrain, yTrain, validation_data=(xTest, yTest), epochs=200)
+    
+    model.fit(xTrain, 
+        yTrain, 
+        validation_data=(xTest, yTest),  
+        epochs=200)
     
     def PrintProbs(input):
         string = "[ "
@@ -209,15 +228,15 @@ def RunLatticeDNN(saveModel=False):
         return string + "]"
 
     preds = model.predict(xTest)
-    print(uniqueLabels)
+    #print(uniqueLabels)
     for i in range(len(preds)):
         predClass = uniqueLabels[np.argmax(preds[i])]
-        trueClass = uniqueLabels[np.argmax(yTest[i])]
+        trueClass = uniqueLabels[yTest[i]]
         if trueClass == predClass:
             printColor = bcolors.OKGREEN
         else:
             printColor = bcolors.FAIL
-        print(f"True: {trueClass:10} {printColor} Predicted: {predClass:10} {100 * np.max(preds[i]):.2f}% - {PrintProbs(preds[i])} {bcolors.ENDC}")
+        print(f"True: {trueClass:10} {printColor} Predicted: {predClass:10} {100 * np.max(preds[i]):.2f}% {bcolors.ENDC}")# - {PrintProbs(preds[i])} {bcolors.ENDC}")
 
 def main():
     #RunRadiiDNN()

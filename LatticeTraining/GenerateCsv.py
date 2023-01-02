@@ -14,22 +14,29 @@ import csv
 import Utils
 import LatticeUtils
 
+# TODO: Implement scale in order to change from sim to exp
+
 # Take structured directory containing labeled subdirectories with image and create csv to be read into tf dataset
-# FIXME: Test csv is empty
 def GenerateCsv(inDir, outDir, trials=10):
     # Create 2D array that holds class and list of radii
     trainData = []
     uniqueClasses = []
+    numSubDirs = len(os.listdir(inDir))
+    subDirCount = 1
     for subdir in os.listdir(inDir):
         print(f"Processing sub-directory {subdir}")
-        count = 1
+        imageCount = 1
         try:
             uniqueClasses.append(subdir)
+            if len(os.listdir(f"{inDir}/{subdir}")) < 5:
+                print(f"{subdir} of insufficient size for training (< 5), skipping")
+                subDirCount += 1
+                continue
             for image in os.listdir(f"{inDir}/{subdir}"):
                 try:
                     trialParams = []
                     for i in range(trials):
-                        print(f"Processing {count}/{len(os.listdir(f'{inDir}/{subdir}'))}, Trial {i}/{trials}")
+                        print(f"Sub Dir {subDirCount}/{numSubDirs}, Image {imageCount}/{len(os.listdir(f'{inDir}/{subdir}'))}, Trial {i}/{trials}")
                         readImage = skimage.util.img_as_float(skimage.io.imread(f"{inDir}/{subdir}/{image}", as_gray=True))
                         maximaCoords = Utils.GetImageMaxima(readImage)
                         p1, p2, p3 = LatticeUtils.FindLattice(maximaCoords)
@@ -37,18 +44,20 @@ def GenerateCsv(inDir, outDir, trials=10):
                     params = list(np.median(trialParams, 0))
                     params = [subdir] + params
                     trainData.append(params)
-                except ValueError:
+                except:
                     print(f"Unable to process {image}")
-                count += 1
+                imageCount += 1
         except NotADirectoryError:
             pass
+        subDirCount += 1
 
     testData = []
     for label in uniqueClasses:
         indices = np.where(np.array(trainData)[:,0]==label)[0]
         numItemsInClass = len(indices)
-        numItemsInTestSet = int(numItemsInClass * 0.1) if int(numItemsInClass * 0.1) >= 1 else 0
-        indicesToPullTest = np.random.choice(indices, numItemsInTestSet, replace=False)
+        numItemsInTestSet = 1 if numItemsInClass >= 5 else 0
+        indicesToPullTest = list(np.random.choice(indices, numItemsInTestSet, replace=False))
+        indicesToPullTest.sort(reverse=True)
 
         for index in indicesToPullTest:
             testData.append(trainData.pop(index))
@@ -62,8 +71,8 @@ def GenerateCsv(inDir, outDir, trials=10):
         writer.writerows(testData)
 
 def main():
-    inDir = "/Users/mitchellmika/Desktop/ExpSorted"
-    outDir = "LatticeTraining/Data/RawExpNoZone"
+    inDir = "/Users/mitchellmika/Desktop/ExpSortedZonedReduced"
+    outDir = "LatticeTraining/Data/ExpZoneReducedThreeFeatures"
 
     GenerateCsv(inDir, outDir)
 
